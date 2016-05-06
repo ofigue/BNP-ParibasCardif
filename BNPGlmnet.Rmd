@@ -1,0 +1,58 @@
+---
+title: "Glmnet"
+author: "Oswaldo F. Domejean"
+date: "March 14, 2016"
+output: word_document
+---
+
+Libraries
+
+```{r}
+library(Metrics)
+library(Matrix)
+library(glmnet)
+library(pROC)
+library(caTools)
+```
+
+Data loading
+```{r}
+setwd("~/Documents/Data Mining/Kaggle/BNP Paribas Cardif Claims Management")
+train <- read.table("trainV1.csv", header=T, sep=",")
+test <- read.table("testV1.csv", header=T, sep=",") 
+
+```
+
+Model GLMNET: 
+
+```{r}
+conjunto<-1:5000
+train=train[conjunto,]
+conjunto<-1:5000
+test=test[conjunto,]
+
+
+train.label <- train[,(names(train) %in% c("target"))]
+train.label<-as.factor(train.label)
+
+train=train[,!(names(train) %in% c("ID", "target"))]
+test.label <- test[,(names(test) %in% c("ID"))]
+test=test[,!(names(test) %in% c("ID"))]
+
+trainMatrix <- model.matrix(~., train)
+testMatrix <- model.matrix(~., test)
+
+#BNPglmnet <- glmnet(trainMatrix, train.label)
+#predGlmnet <- predict(BNPglmnet, testMatrix)
+
+BNPglmnetCV <- cv.glmnet(trainMatrix, train.label, family="binomial", nfolds=5)
+  
+predGlmnetCV <- predict(BNPglmnetCV, testMatrix,type="response",
+                        s=BNPglmnetCV$lambda.min)
+
+# test dataset prediction
+prediccion1 <- as.data.frame(cbind(test.label,predGlmnetCV))
+
+write.csv(prediccion1, "predGLMNETtest", row.names = FALSE)
+
+```

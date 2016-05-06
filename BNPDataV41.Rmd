@@ -1,0 +1,392 @@
+---
+title: "BNPParibasCardif"
+author: "Oswaldo F. Domejean"
+date: "February 19, 2016"
+output: word_document
+---
+
+Libraries
+
+```{r}
+library(ggplot2)
+library(readr)
+library(xgboost)
+library(moments)
+library(dplyr)
+library(caret)
+library(mlbench)
+library(reshape)
+library(ellipse)
+library(matrixStats)
+library(vcd)
+library(sqldf)
+```
+
+Data loading
+
+```{r, echo=FALSE}
+#setwd("~/Dropbox/Kaggle/BNP Paribas Cardif Claims Management")
+setwd("C:/Users/Ing-Figueroa/Dropbox/Kaggle/BNP Paribas Cardif Claims Management")
+train <- read.table("train.csv", header=T, sep=",")
+test <- read.table("test.csv", header=T, sep=",") 
+
+```
+
+Binding train and test datasets into one
+
+```{r}
+## Putting NA's to target column in test dataset
+test$target <- rep(NA,nrow(test))
+
+## first store target column
+train_target <- train$target
+
+## store test Id column and remove it from the train and test data
+# test_Id <- test$ID
+# train$ID <- test$ID <- NULL
+
+## marking train and test data with additional variable and binding them
+train$isTrain <- rep(TRUE,nrow(train))
+test$isTrain <- rep(FALSE,nrow(test))
+train[is.na(train)] <- -1
+test[is.na(test)] <- -1
+train_test <- rbind(train, test)
+
+```
+
+factor variables translate to numeric
+
+```{r}
+f <- c()
+for(i in 1:ncol(train_test)) {
+  if (is.factor(train_test[, i])) f <- c(f, i)
+}
+
+for (i in f) {
+  train_test[, i] <- as.numeric(train_test[, i]) 
+}
+```
+
+Graphical analysis
+
+```{r}
+ggplot(train) + geom_histogram(aes(x=v2, fill=as.factor(target)), binwidth=0.1)
+ggplot(train) + geom_histogram(aes(x=v2, fill=as.factor(target)), binwidth=0.1)
+ggplot(train) + geom_histogram(aes(x=v4, fill=as.factor(target)), binwidth=0.1)
+ggplot(train) + geom_histogram(aes(x=v5, fill=as.factor(target)), binwidth=0.1)
+ggplot(train) + geom_histogram(aes(x=v6, fill=as.factor(target)), binwidth=0.1)
+ggplot(train) + geom_histogram(aes(x=v7, fill=as.factor(target)), binwidth=0.1)
+
+ggplot(train) + geom_density(aes(x=v6, fill=as.factor(target)), alpha=0.3)
+
+
+ggplot(train) + geom_boxplot(aes(x=as.factor(target), y=v1))
+ggplot(train) + geom_boxplot(aes(x=as.factor(target), y=v2))
+ggplot(train) + geom_boxplot(aes(x=as.factor(target), y=v4))
+ggplot(train) + geom_boxplot(aes(x=as.factor(target), y=v5))
+ggplot(train) + geom_boxplot(aes(x=as.factor(target), y=v6))
+ggplot(train) + geom_boxplot(aes(x=as.factor(target), y=v7))
+
+# Categorical Variables
+ggplot(train) + geom_histogram(aes(x=v48, fill=as.factor(target)), binwidth=0.1)
+ggplot(train) + geom_boxplot(aes(x=as.factor(target), y=v48))
+ggplot(train) + geom_bar(aes(x=v3, fill=target), position="dodge")
+ggplot(train) + geom_bar(aes(x=v24, fill=target))
+ggplot(train) + geom_bar(aes(x=v30, fill=target))
+ggplot(train) + geom_bar(aes(x=v31, fill=target))
+ggplot(train) + geom_bar(aes(x=v47, fill=target))
+ggplot(train) + geom_bar(aes(x=v52, fill=target))
+ggplot(train) + geom_bar(aes(x=v56, fill=target))
+
+ggplot(train) + geom_bar(aes(x=v66, fill=target))
+ggplot(train) + geom_bar(aes(x=v71, fill=target))
+ggplot(train) + geom_bar(aes(x=v74, fill=target))
+
+ggplot(train) + geom_bar(aes(x=v75, fill=target))
+ggplot(train) + geom_bar(aes(x=v79, fill=target))
+ggplot(train) + geom_bar(aes(x=v91, fill=target))
+
+ggplot(train) + geom_bar(aes(x=v107, fill=target))
+ggplot(train) + geom_bar(aes(x=v110, fill=target))
+ggplot(train) + geom_bar(aes(x=v112, fill=target))
+
+ggplot(train) + geom_bar(aes(x=v113, fill=target))
+ggplot(train) + geom_bar(aes(x=v125, fill=target))
+
+structable(v3~target, train)
+structable(v24~target, train)
+structable(v30~target, train)
+structable(v47~target, train)
+structable(v52~target, train)
+structable(target~v56, train) # 123 levels
+structable(v66~target, train)
+structable(v71~target, train)
+structable(v74~target, train)
+structable(v110~target, train)
+structable(v112~target, train)
+structable(v113~target, train)
+structable(v125~target, train) # 91 levels
+
+# final[complete.cases(final),]
+
+```
+
+Plot correlations: There is a very high correlation betwen a lots of features.Very high correlation, with 30, 40 or 50 features, the same picture.
+
+```{r}
+# Correlation with the first 50 the features. 
+correlacion <- cor(train_test[,num.features], use="pairwise", method="pearson")
+
+ordenCorr <- order(correlacion[1,])
+correlacion <- correlacion[ordenCorr, ordenCorr]
+
+ordCorr <- as.data.frame(melt(correlacion))
+
+ordCorr[with(ordCorr, order(-abs(value),value)), ]
+
+# With 30, 40 or 50 features, the same following picture.
+plotcorr(correlacion, 
+         col=colorRampPalette(c("red", "white", "blue"))(11)[5*correlacion + 6])
+
+# Correlation with all the features
+correlacion <- cor(train_test[,num.features], use="pairwise", method="pearson")
+ordenCorr <- order(correlacion[1,])
+correlacion <- correlacion[ordenCorr, ordenCorr]
+
+ordCorr <- as.data.frame(melt(correlacion))
+
+ordCorr[with(ordCorr, order(-abs(value),value)), ]
+
+# With all features, the same following picture.
+plotcorr(correlacion, 
+         col=colorRampPalette(c("red", "white", "blue"))(11)[5*correlacion + 6])
+
+allDataCorr <- train_test[,num.features]
+
+pairs(allDataCorr[,c(1,2,3,4)], lower.panel=panel.smooth, upper.panel=panel.cor)
+pairs(allDataCorr[,c(5,6,7,8)], lower.panel=panel.smooth, upper.panel=panel.cor)
+pairs(allDataCorr[,c(9,10,11,12)], lower.panel=panel.smooth, upper.panel=panel.cor)
+pairs(allDataCorr[,c(13,14,15,16)], lower.panel=panel.smooth, upper.panel=panel.cor)
+
+rm(allDataCorr)
+```
+
+
+Get rid of correlated features
+
+```{r}
+#set.seed(3748)
+
+train_test[is.na(train_test)] <- 0
+
+train_testV1<-train_test[,num.features]
+correlationMatrix<-cor(train_testV1)
+print(correlationMatrix)
+
+matriz <- melt(correlationMatrix)
+## sort by descending absolute correlation
+matriz <- matriz[order(- abs(matriz$value)), ]
+
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.80)
+print(highlyCorrelated)
+nomCorr <- names(train_testV1[,highlyCorrelated])
+train_test <- train_test[,!names(train_test) %in% nomCorr]
+
+# With 30, 40 or 50 features, the same following picture.
+plotcorr(correlationMatrix, 
+         col=colorRampPalette(c("red", "white", "blue"))(11)[5*correlacion + 6])
+
+
+rm(train_testV1, correlationMatrix, nomCorr)
+
+```
+
+
+
+FEATURE ENGINEERING
+
+```{r}
+
+# According to post "analysis-of-duplicate-variables-correlated"
+
+train_test$v91<-NULL
+train_test$v110<-NULL
+
+# According to post "analysis-of-duplicate-variables-correlated" related to chained associations>
+
+train_test$v89<-NULL
+train_test$v83<-NULL
+train_test$v8<-NULL
+train_test$v76<-NULL
+train_test$v64<-NULL
+train_test$v63<-NULL
+train_test$v54<-NULL
+train_test$v48<-NULL
+train_test$v46<-NULL
+train_test$v41<-NULL
+train_test$v33<-NULL
+train_test$v29<-NULL
+train_test$v25<-NULL
+train_test$v17<-NULL
+train_test$v121<-NULL
+train_test$v106<-NULL
+
+
+train_test$fe1<-train_test$v50*train_test$v10
+train_test$fe2<-train_test$v50*train_test$v12
+train_test$fe3<-train_test$v50*train_test$v14
+train_test$fe4<-train_test$v50*train_test$v114
+
+train_test$fe5<-train_test$v129*train_test$v40
+train_test$fe6<-train_test$v129*train_test$v34
+train_test$fe7<-train_test$v129*train_test$v21
+
+train_test$fe8<-train_test$v114*train_test$v10
+train_test$fe9<-train_test$v114*train_test$v12
+train_test$fe10<-train_test$v114*train_test$v14
+
+train_test$fe11<-train_test$v21*train_test$v50
+train_test$fe12<-train_test$v21*train_test$v10
+train_test$fe13<-train_test$v21*train_test$v12
+train_test$fe14<-train_test$v21*train_test$v14
+
+
+alfa<-train_test %>%
+  select(v50, v10, v12, v14)
+train_test$fe15<-rowSums(as.matrix(alfa))
+train_test$fe16<-rowMeans(as.matrix(alfa))
+train_test$fe17<-rowSds(as.matrix(alfa))
+rm(alfa)
+
+alfa<-train_test %>%
+  select(v129, v40, v10, v114)
+train_test$fe18<-rowSums(as.matrix(alfa))
+train_test$fe19<-rowMeans(as.matrix(alfa))
+train_test$fe20<-rowSds(as.matrix(alfa))
+rm(alfa)
+
+alfa<-train_test %>%
+  select(v40, v34, v21)
+train_test$fe21<-rowSums(as.matrix(alfa))
+train_test$fe22<-rowMeans(as.matrix(alfa))
+train_test$fe23<-rowSds(as.matrix(alfa))
+rm(alfa)
+
+alfa<-train_test %>%
+  select(v21, v129, v14)
+train_test$fe24<-rowSums(as.matrix(alfa))
+train_test$fe25<-rowMeans(as.matrix(alfa))
+train_test$fe26<-rowSds(as.matrix(alfa))
+rm(alfa)
+
+alfa<-train_test %>%
+  select(v98, v100, v39)
+train_test$fe27<-rowSums(as.matrix(alfa))
+train_test$fe28<-rowMeans(as.matrix(alfa))
+train_test$fe29<-rowSds(as.matrix(alfa))
+rm(alfa)
+
+train_test$fe30<-train_test$v50*train_test$v56
+train_test$fe31<-train_test$v50*train_test$v71
+train_test$fe32<-train_test$v66*train_test$v66
+train_test$fe33<-train_test$v50*train_test$v50
+train_test$fe34<-train_test$v50*train_test$v52
+train_test$fe35<-train_test$v50*train_test$v62
+train_test$fe36<-train_test$v47*train_test$v47
+
+
+ggplot(train_test) + geom_density(aes(x=sqrt(v119),fill=as.factor(target)))
+#train_test$fe35<-sqrt(train_test$v119)
+
+ggplot(train_test) + geom_density(aes(x=log(v129),fill=as.factor(target)))
+#train_test$fe36<-log(train_test$v129)
+
+ggplot(train_test) + geom_density(aes(x=v40,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=v114,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=sqrt(v10),fill=as.factor(target)))
+#train_test$fe37<-sqrt(train_test$v10)
+
+ggplot(train_test) + geom_density(aes(x=v34,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=v50,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=v12,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=v21,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=v98,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=sqrt(v62),fill=as.factor(target)))
+#train_test$fe38<-sqrt(train_test$v62)
+
+ggplot(train_test) + geom_density(aes(x=v100,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=v12,fill=as.factor(target)))
+ggplot(train_test) + geom_density(aes(x=sqrt(v39),fill=as.factor(target)))
+#train_test$fe39<-sqrt(train_test$v39)
+
+```
+
+Identify features with near zero variance
+
+```{r}
+nzv <- nearZeroVar(train, saveMetrics = TRUE)
+print(paste('Range:',range(nzv$percentUnique)))
+print(nzv)
+print(paste('Column count before cutoff:',ncol(train)))
+dim(nzv[nzv$percentUnique > 0.1,])
+```
+
+
+Divide in train and test
+```{r}
+rm(train,test)
+train<-train_test[train_test$isTrain,]
+test<-train_test[!train_test$isTrain,]
+
+#train<-sqldf('select *
+#            from train_test
+#            where isTrain')
+
+#test<-sqldf('select *
+#            from train_test
+#            where NOT isTrain')
+
+train$isTrain <- NULL
+test$isTrain <- NULL
+test$target<-NULL
+
+rm(train_test)
+#setwd("~/Documents/Data Mining/Kaggle/BNP Paribas Cardif Claims Management")
+write.csv(train, "trainV1.csv", row.names = FALSE)
+write.csv(test, "testV1.csv", row.names = FALSE)
+
+
+```
+
+
+FEATURE IMPORTANCE
+
+```{r}
+library(randomForest)
+library(gbm)
+
+
+nobs <- nrow(train)
+indice<- sample(nrow(train), 0.4*nobs, replace=FALSE)
+train1<-train[indice,!(names(train) %in% c("ID"))]
+train1$target<- as.factor(train1$target)
+
+fit = randomForest(target ~.,data=train1, nodesize=10, mtry=3, ntree=100, importance=TRUE)
+
+fit
+importance(fit)
+summary(fit)
+varImpPlot(fit)
+importance(fit,type=1)
+importance(fit,type=2)
+a<-importance(fit)
+a[sort.list(a[,3], decreasing = TRUE), ]
+a[sort.list(a[,4], decreasing = TRUE), ]
+
+fit = gbm(target ~.,data=train1, distribution = "bernoulli", n.trees = 300, interaction.depth = 10, shrinkage=0.01, verbose=TRUE)
+
+summary(fit)
+gbm.perf(fit)
+
+```
+

@@ -1,0 +1,77 @@
+---
+title: "GBM"
+author: "Oswaldo F. Domejean"
+date: "March 14, 2016"
+output: word_document
+---
+
+---
+title: "PruModelV20"
+author: "Oswaldo F. Domejean"
+date: "January 5, 2016"
+output: word_document
+---
+
+Libraries
+
+```{r}
+library(gbm)
+library(caTools)
+```
+
+Data loading
+```{r}
+setwd("~/Documents/Data Mining/Kaggle/BNP Paribas Cardif Claims Management")
+train <- read.table("trainD1.csv", header=T, sep=",")
+test <- read.table("testD1.csv", header=T, sep=",") 
+
+```
+
+GBM
+
+```{r}
+
+k = 5
+resultCV <- data.frame(ID=integer(), pred=numeric()) 
+n = floor(nrow(trainV1)/k)
+for(i in 1:k){
+  s1=((i-1)*n+1)
+  s2=(i*n)
+  subset=s1:s2
+  cv.train=trainV1[-subset,!(names(trainV1) %in% c("ID"))]
+  test.label <- trainV1[subset,(names(trainV1) %in% c("ID"))]
+  cv.test=trainV1[subset,!(names(trainV1) %in% c("ID"))]
+
+  GBMModel <- gbm(target ~.,
+              data=cv.train,
+              n.trees=500,
+              distribution = "bernoulli",
+              interaction.depth=10,
+              n.minobsinnode=10,
+              shrinkage=0.1,
+              # cv.folds=3,
+              n.cores=2,
+              train.fraction=1,
+              bag.fraction=0.7,
+              verbose=T)  
+
+  PredGBM=predict(GBMModel,newdata=cv.test[,!(names(cv.test) %in% c("target"))],
+                        n.trees=500,type="response")
+
+  prediccion<-as.data.frame(cbind(test.label,PredGBM))
+  resultCV<-rbind(resultCV,prediccion)
+}
+
+test.label1 <- test[,(names(test) %in% c("ID"))]
+PredGBMtest=predict(GBMModel,newdata=test[,!(names(test) %in% c("target"))],
+                        n.trees=500,type="response")
+prediccion1 <- as.data.frame(cbind(test.label1,PredGBMtest)) 
+
+write.csv(prediccion1, "predGBMtest.csv", row.names = FALSE)
+
+
+summary(GBMModel)
+gbm.perf(GBMModel)
+
+
+```

@@ -1,0 +1,94 @@
+---
+title: "PruModelV20"
+author: "Oswaldo F. Domejean"
+date: "January 5, 2016"
+output: word_document
+---
+
+Libraries
+
+```{r}
+library(Metrics)
+library(Matrix)
+library(xgboost)
+library(RCurl)
+library(caTools)
+```
+
+Data loading
+```{r}
+#setwd("~/Documents/Data Mining/Kaggle/BNP Paribas Cardif Claims Management")
+#setwd("C:/Users/Ing-Figueroa/Dropbox/Kaggle/BNP Paribas Cardif Claims Management")
+train <- read.table("trainV1.csv", header=T, sep=",")
+test <- read.table("testV1.csv", header=T, sep=",") 
+
+```
+
+Xgboost
+
+
+```{r}
+
+#indice<-1:5000
+#train<-train[indice,]
+#test<-test[indice,]
+
+param <- list("objective"  = "binary:logistic"
+            , "eta" = 0.01
+            , "subsample" = 0.8
+            , "colsample_bytree" = 0.8
+            , "min_child_weight" = 1
+            )
+
+k = 5
+submission <- read.table("sample_submission.csv", header=TRUE, sep=',')
+ensemble <- rep(0, nrow(test))
+n = floor(nrow(train)/k)
+for(i in 1:k){
+  s1=((i-1)*n+1)
+  s2=(i*n)
+  subset=s1:s2
+  cv.train=train[-subset,]
+  cv.test=train[subset,]
+  
+  train.label <- cv.train$target
+  test.label <- cv.test$target
+  
+  train.data <- cv.train[,!(names(cv.train) %in% c("ID", "target"))]
+  test.data <- cv.test[,!(names(cv.test) %in% c("ID", "target"))]
+  
+  dtrain <- xgb.DMatrix(data.matrix(train.data), label=train.label)
+  dvalid <- xgb.DMatrix(data.matrix(test.data), label=test.label)
+  watchlist <- list(eval = dvalid, train = dtrain)
+
+  XGBModel <- xgb.train(data      = dtrain,
+                 params            = param, 
+                 max_depth         = 10,
+                 nrounds           = 1300,
+                 verbose           = 1,
+                 early.stop.round  = 30,
+                 watchlist         = watchlist,
+                 #maximize          = FALSE,
+                 print.every.n     = 100,
+                 eval_metric       = "logloss"
+                 )
+  
+  # test dataset prediction
+  predXGBtest=predict(XGBModel,data.matrix(test[,!(names(test) %in% c("target"))]))
+  ensemble <- ensemble + predXGBtest
+
+}
+
+submission$PredictedProb <- ensemble/i
+write.csv(submission, "predXGBtest.csv", row.names=F, quote=F)
+
+# Model info
+# Important features
+imp_matrix <- xgb.importance(feature_names = names(cv.train), model = XGBModel)
+print(imp_matrix)
+
+# Feature importance bar plot by gain
+print(xgb.plot.importance(importance_matrix = imp_matrix))
+
+```
+

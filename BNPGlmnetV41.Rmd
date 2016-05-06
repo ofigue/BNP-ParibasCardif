@@ -1,0 +1,91 @@
+---
+title: "Glmnet"
+author: "Oswaldo F. Domejean"
+date: "March 14, 2016"
+output: word_document
+---
+
+Libraries
+
+```{r}
+library(Metrics)
+library(Matrix)
+library(glmnet)
+library(pROC)
+library(caTools)
+```
+
+Data loading
+```{r}
+setwd("~/Documents/Data Mining/Kaggle/BNP Paribas Cardif Claims Management")
+train <- read.table("trainV1.csv", header=T, sep=",")
+test <- read.table("testV1.csv", header=T, sep=",") 
+
+```
+
+Model GLMNET: 
+
+```{r}
+#conjunto<-1:5000
+#train=train[conjunto,]
+#test=test[conjunto,]
+
+train.label <- train[,(names(train) %in% c("target"))]
+train.label <- as.factor(train.label)
+
+train1=train[,!(names(train) %in% c("ID", "target"))]
+test.label <- test[,(names(test) %in% c("ID"))]
+test1=test[,!(names(test) %in% c("ID"))]
+
+trainMatrix <- model.matrix(~., train1)
+testMatrix <- model.matrix(~., test1)
+
+BNPglmnetCV <- cv.glmnet(trainMatrix, train.label, family="binomial", nfolds=5)
+  
+#predGlmnetCV <- predict(BNPglmnetCV, testMatrix,type="response",
+#                        s=BNPglmnetCV$lambda.min)
+
+# test dataset prediction
+#prediccion1 <- as.data.frame(cbind(test.label,predGlmnetCV))
+
+#write.csv(prediccion1, "predGLMNETtest", row.names = FALSE)
+
+
+###########################
+#train.label <- train[,(names(train) %in% c("target"))]
+#train.label <- as.factor(train.label)
+#cv.train=train[,!(names(train) %in% c("ID", "target"))]
+#test.label <- test[,(names(test) %in% c("ID"))]
+#cv.test=test[,!(names(test) %in% c("ID"))]
+
+k = 5
+submission <- read.table("sample_submission.csv", header=TRUE, sep=',')
+ensemble <- rep(0, nrow(test))
+n = floor(nrow(train)/k)
+for(i in 1:k){
+  s1=((i-1)*n+1)
+  s2=(i*n)
+  subset=s1:s2
+  train.label <- train[-subset,(names(train) %in% c("target"))]
+  train.label <- as.factor(train.label)
+  cv.train=train[-subset,!(names(train) %in% c("ID", "target"))]
+  test.label <- train[subset,(names(test) %in% c("ID"))]
+  cv.test=train[subset,!(names(test) %in% c("ID"))]
+
+  trainMatrix <- model.matrix(~., cv.train)
+  testMatrix <- model.matrix(~., cv.test)
+
+  BNPglmnet <- glmnet(trainMatrix,
+                      train.label,
+                      family="binomial")
+
+  testMatrix <- model.matrix(~., test[,!(names(test) %in% c("ID"))])
+  predGlmnet <- predict(BNPglmnet, testMatrix,type="response",
+                        s=BNPglmnetCV$lambda.min)
+  ensemble <- ensemble + predGlmnet
+}
+
+# test dataset prediction
+
+submission$PredictedProb <- ensemble/i
+write.csv(submission, "predGLMNETtest", row.names = FALSE)
